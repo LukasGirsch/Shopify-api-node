@@ -9,13 +9,13 @@ describe('Shopify#resourceFeedback', () => {
   const shopify = common.shopify;
   const scope = common.scope;
 
-  afterEach(() => expect(scope.isDone()).to.be.true);
+  afterEach(() => expect(scope.pendingMocks()).to.deep.equal([]));
 
   it('creates a resource feedback', () => {
     const input = fixtures.req.create;
     const output = fixtures.res.create;
 
-    scope.post('/admin/resource_feedback.json', input).reply(201, output);
+    scope.post('/admin/resource_feedback.json', input).reply(202, output);
 
     return shopify.resourceFeedback
       .create(input.resource_feedback)

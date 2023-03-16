@@ -1,6 +1,7 @@
 describe('Shopify', () => {
   'use strict';
 
+  const jsonBigInt = require('json-bigint');
   const expect = require('chai').expect;
   const format = require('url').format;
   const nock = require('nock');
@@ -12,11 +13,16 @@ describe('Shopify', () => {
   const pkg = require('../package');
   const Shopify = require('..');
 
+  const { parse: parseJson, stringify: stringifyJson } = jsonBigInt({
+    useNativeBigInt: true
+  });
+
   const accessToken = common.accessToken;
   const apiKey = common.apiKey;
   const apiVersion = common.apiVersion;
   const password = common.password;
   const shopify = common.shopify;
+  const shopifyWithRetries = common.shopifyWithRetries;
   const shopName = common.shopName;
 
   it('exports the constructor', () => {
@@ -33,6 +39,9 @@ describe('Shopify', () => {
     expect(() => new Shopify({ password })).to.throw(Error, msg);
     expect(() => new Shopify({ accessToken, apiKey })).to.throw(Error, msg);
     expect(() => new Shopify({ accessToken, password })).to.throw(Error, msg);
+    expect(() => {
+      new Shopify({ accessToken, password, maxRetries: 1, autoLimit: true });
+    }).to.throw(Error, msg);
   });
 
   it('makes the new operator optional', () => {
@@ -108,15 +117,18 @@ describe('Shopify', () => {
       restoreRate: undefined,
       remaining: undefined,
       current: undefined,
-      max: undefined
+      max: undefined,
+      actualQueryCost: undefined,
+      requestedQueryCost: undefined
     });
   });
 
   describe('Shopify#request', () => {
     const url = { pathname: '/test', ...shopify.baseUrl };
+    const addWorkingRESTRequestMock = common.addWorkingRESTRequestMock;
     const scope = common.scope;
 
-    afterEach(() => expect(nock.isDone()).to.be.true);
+    afterEach(() => expect(nock.pendingMocks()).to.deep.equal([]));
 
     it('returns a RequestError when the request fails', () => {
       const message = 'Something wrong happened';
@@ -138,10 +150,10 @@ describe('Shopify', () => {
       const shopify = new Shopify({ shopName, accessToken, timeout: 100 });
 
       //
-      // `scope.delay()` can only delay the `response` event. The connection is
-      // still established so it is useless for this test. To work around this
-      // issue a non-routable IP address is used here instead of `nock`. See
-      // https://tools.ietf.org/html/rfc5737#section-3
+      // `scope.delay()` can only delay the `'response'` event. The connection
+      // is still established so it is useless for this test. To work around
+      // this issue a non-routable IP address is used here instead of `nock`.
+      // See https://tools.ietf.org/html/rfc5737#section-3
       //
       shopify.baseUrl.hostname = '192.0.2.1';
 
@@ -167,9 +179,7 @@ describe('Shopify', () => {
         },
         (err) => {
           expect(err).to.be.an.instanceof(got.TimeoutError);
-          expect(err.message).to.include(
-            "Timeout awaiting 'request' for 100ms"
-          );
+          expect(err.message).to.equal("Timeout awaiting 'request' for 100ms");
         }
       );
     });
@@ -295,7 +305,7 @@ describe('Shopify', () => {
       );
     });
 
-    it('emits the `callLimits` event', (done) => {
+    it("emits the 'callLimits' event", (done) => {
       scope.get('/test').reply(
         200,
         {},
@@ -504,17 +514,282 @@ describe('Shopify', () => {
         expect(timestamps[1] - timestamps[0]).to.be.within(80, 120);
       });
     });
+
+    it('honors the parseJson and stringifyJson options', () => {
+      const shopify = new Shopify({
+        accessToken,
+        parseJson,
+        shopName,
+        stringifyJson
+      });
+
+      const data = { x: 9223372036854775807n };
+      const serialized = '{"x":9223372036854775807}';
+
+      scope.post('/test', serialized).reply(200, serialized);
+
+      return shopify.request(url, 'POST', undefined, data).then((res) => {
+        expect(res).to.deep.equal(data);
+      });
+    });
+
+    it('retries 429 errors from Shopify according to the header', () => {
+      scope
+        .get('/admin/shop.json')
+        .reply(429, 'too many requests', { 'Retry-After': '0.5' })
+        .get('/admin/shop.json')
+        .reply(429, 'too many requests', { 'Retry-After': '0.5' });
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopifyWithRetries.shop.get().then((result) => {
+        expect(result.name).equal('My Cool Test Shop');
+      });
+    });
+
+    it("retries 429 errors from Shopify that don't have a header", () => {
+      scope
+        .get('/admin/shop.json')
+        .reply(429, 'too many requests')
+        .get('/admin/shop.json')
+        .reply(429, 'too many requests');
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopifyWithRetries.shop.get().then((result) => {
+        expect(result.name).equal('My Cool Test Shop');
+      });
+    }).timeout(8000);
+
+    it('retries 429 errors from Shopify that have broken header values', () => {
+      scope
+        .get('/admin/shop.json')
+        .reply(429, 'too many requests', { 'Retry-After': 'foobar' });
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopifyWithRetries.shop.get().then((result) => {
+        expect(result.name).equal('My Cool Test Shop');
+      });
+    });
+
+    it('honors the maxRetries option', () => {
+      let attempts = 0;
+
+      scope
+        .get('/admin/shop.json')
+        .times(4)
+        .reply(429, () => {
+          attempts++;
+          return 'too many requests';
+        });
+
+      return shopifyWithRetries.shop.get().catch((result) => {
+        expect(result.response.statusCode).equal(429);
+        expect(attempts).equal(4);
+      });
+    }).timeout(8000);
+
+    it('does not retry 404 errors', () => {
+      scope.get('/admin/products/10.json').reply(404, {
+        error: 'not found'
+      });
+
+      return shopifyWithRetries.product.get(10).catch((err) => {
+        expect(err).to.be.an.instanceof(got.HTTPError);
+        expect(err.message).to.equal('Response code 404 (Not Found)');
+      });
+    });
+
+    it('does not retry 422 errors that return an error string', () => {
+      scope.put('/admin/products/10.json').reply(422, {
+        error: 'the product was invalid'
+      });
+
+      return shopifyWithRetries.product.update(10).catch((err) => {
+        expect(err).to.be.an.instanceof(got.HTTPError);
+        expect(err.message).to.equal(
+          'Response code 422 (Unprocessable Entity)'
+        );
+      });
+    });
+
+    it('does not retry 422 errors that return an errors array', () => {
+      scope.put('/admin/products/10.json').reply(422, {
+        errors: ['the product was invalid']
+      });
+
+      return shopifyWithRetries.product.update(10).catch((err) => {
+        expect(err).to.be.an.instanceof(got.HTTPError);
+        expect(err.message).to.equal(
+          'Response code 422 (Unprocessable Entity)'
+        );
+      });
+    });
+
+    it('does not retry 422 errors that return an errors object', () => {
+      scope.put('/admin/products/10.json').reply(422, {
+        errors: {
+          title: 'is required'
+        }
+      });
+
+      return shopifyWithRetries.product.update(10).catch((err) => {
+        expect(err).to.be.an.instanceof(got.HTTPError);
+        expect(err.message).to.equal(
+          'Response code 422 (Unprocessable Entity)'
+        );
+      });
+    });
+
+    it('retries 500 errors from shopify', () => {
+      scope.get('/admin/shop.json').reply(500, {
+        error: 'something went wrong'
+      });
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopifyWithRetries.shop.get().then((result) => {
+        expect(result.name).equal('My Cool Test Shop');
+      });
+    }).timeout(4000);
+
+    it('retries network system level errors immediately', () => {
+      scope.get('/admin/shop.json').replyWithError({
+        message: 'the network is broken',
+        code: 'ECONNRESET'
+      });
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopifyWithRetries.shop.get().then((result) => {
+        expect(result.name).equal('My Cool Test Shop');
+      });
+    });
+
+    it('retries a variety of errors in order', () => {
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        maxRetries: 5,
+        timeout: 200
+      });
+
+      scope
+        .get('/admin/shop.json')
+        .replyWithError({
+          message: 'the network is broken',
+          code: 'ECONNRESET'
+        })
+        .get('/admin/shop.json')
+        .reply(429, 'too many requests', { 'Retry-After': '1' })
+        .get('/admin/shop.json')
+        .reply(429, 'too many requests', { 'Retry-After': '0.2' })
+        .get('/admin/shop.json')
+        .reply(500, 'sorry its broken')
+        .get('/admin/shop.json')
+        .delay(500) // Longer than API client configured timeout option.
+        .reply(200, {
+          shop: {
+            id: 1,
+            name: 'My Cool Test Shop'
+          }
+        });
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopify.shop.get().then((result) => {
+        expect(result.name).equal('My Cool Test Shop');
+      });
+    }).timeout(10000);
+
+    it('calls hooks passed as options when accessing resources', () => {
+      function beforeRequest() {
+        beforeRequest.called = true;
+      }
+
+      function afterResponse(x) {
+        afterResponse.called = true;
+        return x;
+      }
+
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        hooks: {
+          beforeRequest: [beforeRequest],
+          afterResponse: [afterResponse]
+        }
+      });
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopify.shop.get().then(() => {
+        expect(beforeRequest.called).to.be.true;
+        expect(afterResponse.called).to.be.true;
+      });
+    });
+
+    it('calls hooks passed as options when making raw requests', () => {
+      function beforeRequest() {
+        beforeRequest.called = true;
+      }
+
+      function afterResponse(x) {
+        afterResponse.called = true;
+        return x;
+      }
+
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        hooks: {
+          beforeRequest: [beforeRequest],
+          afterResponse: [afterResponse]
+        }
+      });
+
+      scope.get('/test').reply(200, {});
+
+      return shopify.request(url, 'GET').then(() => {
+        expect(beforeRequest.called).to.be.true;
+        expect(afterResponse.called).to.be.true;
+      });
+    });
+
+    it('calls the beforeRetry hook for retried requests', () => {
+      function beforeRetry() {
+        beforeRetry.called = true;
+      }
+
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        maxRetries: 3,
+        hooks: {
+          beforeRetry: [beforeRetry]
+        }
+      });
+
+      scope.get('/admin/shop.json').replyWithError({
+        message: 'the network is broken',
+        code: 'ECONNRESET'
+      });
+
+      addWorkingRESTRequestMock(scope);
+
+      return shopify.shop.get().then((result) => {
+        expect(beforeRetry.called).to.be.true;
+        expect(result.name).equal('My Cool Test Shop');
+      });
+    });
   });
 
   describe('Shopify#graphql', () => {
-    const scope = nock(`https://${shopName}.myshopify.com`, {
-      reqheaders: {
-        'User-Agent': `${pkg.name}/${pkg.version}`,
-        'X-Shopify-Access-Token': accessToken
-      }
-    });
+    const addWorkingGraphQLRequestMock = common.addWorkingGraphQLRequestMock;
+    const scope = common.scope;
 
-    afterEach(() => expect(nock.isDone()).to.be.true);
+    afterEach(() => expect(nock.pendingMocks()).to.deep.equal([]));
 
     it('returns a RequestError when the request fails', () => {
       const message = 'Something wrong happened';
@@ -609,9 +884,7 @@ describe('Shopify', () => {
         },
         (err) => {
           expect(err).to.be.an.instanceof(got.TimeoutError);
-          expect(err.message).to.include(
-            "Timeout awaiting 'request' for 100ms"
-          );
+          expect(err.message).to.equal("Timeout awaiting 'request' for 100ms");
         }
       );
     });
@@ -664,6 +937,8 @@ describe('Shopify', () => {
       scope.post('/admin/api/graphql.json').reply(200, {
         extensions: {
           cost: {
+            requestedQueryCost: 3,
+            actualQueryCost: 3,
             throttleStatus: {
               maximumAvailable: 1000.0,
               currentlyAvailable: 997,
@@ -678,15 +953,19 @@ describe('Shopify', () => {
           restoreRate: 50.0,
           remaining: 997,
           current: 3,
-          max: 1000.0
+          max: 1000.0,
+          actualQueryCost: 3,
+          requestedQueryCost: 3
         });
       });
     });
 
-    it('emits the `callGraphqlLimits` event', (done) => {
+    it("emits the 'callGraphqlLimits' event", (done) => {
       scope.post('/admin/api/graphql.json').reply(200, {
         extensions: {
           cost: {
+            requestedQueryCost: 3,
+            actualQueryCost: 3,
             throttleStatus: {
               maximumAvailable: 1000.0,
               currentlyAvailable: 997,
@@ -701,7 +980,9 @@ describe('Shopify', () => {
           restoreRate: 50.0,
           remaining: 997,
           current: 3,
-          max: 1000.0
+          max: 1000.0,
+          actualQueryCost: 3,
+          requestedQueryCost: 3
         });
         done();
       });
@@ -717,7 +998,9 @@ describe('Shopify', () => {
           restoreRate: 50.0,
           remaining: 997,
           current: 3,
-          max: 1000.0
+          max: 1000.0,
+          actualQueryCost: 3,
+          requestedQueryCost: 3
         });
       });
     });
@@ -734,7 +1017,9 @@ describe('Shopify', () => {
           restoreRate: 50.0,
           remaining: 997,
           current: 3,
-          max: 1000.0
+          max: 1000.0,
+          actualQueryCost: 3,
+          requestedQueryCost: 3
         });
       });
     });
@@ -775,6 +1060,238 @@ describe('Shopify', () => {
       return shopify
         .graphql('query')
         .then((res) => expect(res).to.deep.equal(response.data));
+    });
+
+    it('honors the parseJson and stringifyJson options', () => {
+      const shopify = new Shopify({
+        accessToken,
+        parseJson,
+        shopName,
+        stringifyJson
+      });
+
+      const data = { x: 9223372036854775807n };
+
+      scope
+        .post(
+          '/admin/api/graphql.json',
+          '{"query":"query","variables":{"x":9223372036854775807}}'
+        )
+        .reply(200, '{"data":{"x":9223372036854775807}}');
+
+      return shopify.graphql('query', data).then((res) => {
+        expect(res).to.deep.equal(data);
+      });
+    });
+
+    it('does not retry errors from broken GraphQL queries', () => {
+      scope.post('/admin/api/graphql.json').reply(200, {
+        errors: [
+          {
+            message: 'Parse error on "}" (RCURLY) at [4, 1]',
+            locations: [
+              {
+                line: 4,
+                column: 1
+              }
+            ]
+          }
+        ]
+      });
+
+      return shopifyWithRetries.graphql('query { shop ').catch((err) => {
+        expect(err.message).to.equal('Parse error on "}" (RCURLY) at [4, 1]');
+      });
+    });
+
+    it('retries 500 errors from Shopify', () => {
+      scope.post('/admin/api/graphql.json').reply(500, 'something went wrong');
+
+      addWorkingGraphQLRequestMock(scope);
+
+      return shopifyWithRetries
+        .graphql('query { shop { id name } }')
+        .then((result) => {
+          expect(result.shop.name).equal('My Cool Test Shop');
+        });
+    }).timeout(4000);
+
+    it('retries timeout errors from Shopify', () => {
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        maxRetries: 3,
+        timeout: 900
+      });
+
+      scope
+        .post('/admin/api/graphql.json')
+        .delay(1000)
+        .reply(500, 'something went wrong');
+
+      addWorkingGraphQLRequestMock(scope);
+
+      return shopify.graphql('query { shop { id name } }').then((result) => {
+        expect(result.shop.name).equal('My Cool Test Shop');
+      });
+    }).timeout(4000);
+
+    it('retries network system level errors immediately', () => {
+      scope.post('/admin/api/graphql.json').replyWithError({
+        message: 'the network is broken',
+        code: 'ECONNRESET'
+      });
+
+      addWorkingGraphQLRequestMock(scope);
+
+      return shopifyWithRetries
+        .graphql('query { shop { id name } }')
+        .then((result) => {
+          expect(result.shop.name).equal('My Cool Test Shop');
+        });
+    });
+
+    it('retries GraphQL cost limit exceeded errors', () => {
+      scope
+        .post('/admin/api/graphql.json')
+        .reply(200, {
+          errors: [
+            {
+              message: 'Throttled',
+              extensions: {
+                code: 'THROTTLED',
+                documentation: 'https://shopify.dev/api/usage/rate-limits'
+              }
+            }
+          ],
+          extensions: {
+            cost: {
+              requestedQueryCost: 732,
+              actualQueryCost: null,
+              throttleStatus: {
+                maximumAvailable: 1000,
+                currentlyAvailable: 728,
+                restoreRate: 50
+              }
+            }
+          }
+        })
+        .post('/admin/api/graphql.json')
+        .reply(200, {
+          errors: [
+            {
+              message: 'Throttled',
+              extensions: {
+                code: 'THROTTLED',
+                documentation: 'https://shopify.dev/api/usage/rate-limits'
+              }
+            }
+          ],
+          extensions: {
+            cost: {
+              requestedQueryCost: 732,
+              actualQueryCost: null,
+              throttleStatus: {
+                maximumAvailable: 1000,
+                currentlyAvailable: 675,
+                restoreRate: 50
+              }
+            }
+          }
+        });
+
+      addWorkingGraphQLRequestMock(scope);
+
+      return shopifyWithRetries
+        .graphql('query { shop { id name } }')
+        .then((result) => {
+          expect(result.shop.name).equal('My Cool Test Shop');
+        });
+    }).timeout(3000);
+
+    it('calls hooks passed as options when making graphql requests', () => {
+      function beforeRequest() {
+        beforeRequest.called = true;
+      }
+
+      function afterResponse(x) {
+        afterResponse.called = true;
+        return x;
+      }
+
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        hooks: {
+          beforeRequest: [beforeRequest],
+          afterResponse: [afterResponse]
+        }
+      });
+
+      scope.post('/admin/api/graphql.json').reply(200, {
+        data: { foo: 'bar' }
+      });
+
+      return shopify.graphql('query').then(() => {
+        expect(beforeRequest.called).to.be.true;
+        expect(afterResponse.called).to.be.true;
+      });
+    });
+
+    it('calls the beforeRetry hook for retried requests', () => {
+      function beforeRetry() {
+        beforeRetry.called = true;
+      }
+
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        maxRetries: 3,
+        hooks: {
+          beforeRetry: [beforeRetry]
+        }
+      });
+
+      scope.post('/admin/api/graphql.json').replyWithError({
+        message: 'the network is broken',
+        code: 'ECONNRESET'
+      });
+
+      addWorkingGraphQLRequestMock(scope);
+
+      return shopify.graphql('query { shop { id name } }').then(() => {
+        expect(beforeRetry.called).to.be.true;
+      });
+    });
+
+    it('calls the beforeError hook for errors', () => {
+      function beforeError(x) {
+        beforeError.called = true;
+        return x;
+      }
+
+      const shopify = new Shopify({
+        accessToken,
+        shopName,
+        hooks: {
+          beforeError: [beforeError]
+        }
+      });
+
+      const message = 'Something wrong happened';
+
+      scope.post('/admin/api/graphql.json').replyWithError(message);
+
+      return shopify.graphql('query { shop { id name } }').then(
+        () => {
+          throw new Error('Test invalidation');
+        },
+        (err) => {
+          expect(beforeError.called).to.be.true;
+          expect(err).to.be.an.instanceof(got.RequestError);
+          expect(err.message).to.equal(message);
+        }
+      );
     });
   });
 });

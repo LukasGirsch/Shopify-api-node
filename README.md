@@ -1,11 +1,10 @@
-# Shopify API Node.js (Official module)
+# Shopify API Node.js
 
 [![Version npm][npm-shopify-api-node-badge]][npm-shopify-api-node]
-[![Build Status][travis-shopify-api-node-badge]][travis-shopify-api-node]
-[![Dependencies][david-shopify-api-node-badge]][david-shopify-api-node]
+[![Build Status][ci-shopify-api-node-badge]][ci-shopify-api-node]
 [![Coverage Status][coverage-shopify-api-node-badge]][coverage-shopify-api-node]
 
-Official Shopify API bindings for Node.js.
+Shopify API bindings for Node.js.
 
 ## Installation:
 
@@ -53,12 +52,32 @@ Creates a new `Shopify` instance.
   bucket size. For example `{ calls: 2, interval: 1000, bucketSize: 35 }`
   specifies a limit of 2 requests per second with a burst of 35 requests. When
   set to `true` requests are limited as specified in the above example. Defaults
-  to `false`.
+  to `false`. Mutually exclusive with the `maxRetries` option.
+- `parseJson` - Optional - The function used to parse JSON. The function is
+  passed a single argument. This option allows the use of a custom JSON parser
+  that might be needed to properly handle long integer IDs. Defaults to
+  `JSON.parse()`.
 - `presentmentPrices` - Optional - Whether to include the header to pull
   presentment prices for products. Defaults to `false`.
+- `stringifyJson` - Optional - The function used to serialize to JSON. The
+  function is passed a single argument. This option allows the use of a custom
+  JSON serializer that might be needed to properly handle long integer IDs.
+  Defaults to `JSON.stringify()`.
 - `timeout` - Optional - The number of milliseconds before the request times
   out. If the request takes longer than `timeout`, it will be aborted. Defaults
   to `60000`, or 1 minute.
+- `maxRetries` - Optional - The number of times to attempt to make the request
+  to Shopify before giving up. Defaults to `0`, which means no automatic
+  retries. If set to a value greater than `0`, `shopify-api-node` will make up
+  to that many retries. `shopify-api-node` will respect the `Retry-After` header
+  for requests to the REST API, and the throttled cost data for requests to the
+  GraphQL API, and retry the request after that time has elapsed. Mutually
+  exclusive with the `autoLimit` option.
+- `hooks` - Optional - A list of `got`
+  [request hooks](https://github.com/sindresorhus/got/tree/v11#hooks) to attach
+  to all outgoing requests, like `beforeRetry`, `afterResponse`, etc. Hooks
+  should be provided in the same format that Got expects them and will receive
+  the same arguments Got passes unchanged.
 
 #### Return value
 
@@ -249,6 +268,35 @@ parameters needed to fetch the next and previous page of results.
 
 This feature is only available on version 2.24.0 and above.
 
+## Shopify rate limit avoidance
+
+`shopify-api-node` has two optional mechanisms for avoiding requests failing
+with `429 Rate Limit Exceeded` errors from Shopify.
+
+The `autoLimit` option implements a client side leaky bucket algorithm for
+delaying requests until Shopify is likely to accept them. When `autoLimit` is
+on, each `Shopify` instance will track how many requests have been made, and
+delay sending subsequent requests if the rate limit has been exceeded.
+`autoLimit` is very efficient because it almost entirely avoids sending requests
+which will return 429 errors, but, it does not coordinate between multiple
+`Shopify` instances or across multiple processes. If you're using
+`shopify-api-node` in many different processes, `autoLimit` will not correctly
+avoid 429 errors.
+
+The `maxRetries` option implements a retry based strategy for getting requests
+to Shopify, where when a 429 error occurs, the request is automatically retried
+after waiting. Shopify usually replies with a `Retry-After` header indicating to
+the client when the rate limit is available, and so `shopify-api-node` will wait
+that long before retrying. If you are using `shopify-api-node` in many different
+processes, they will all be competing to use the same rate limit shopify
+enforces, so there is no guarantee that retrying after the `Retry-After` header
+delay will work. It is recommended to set `maxRetries` to a high value like `10`
+if you are making many concurrent requests in many processes to ensure each
+request is retried for long enough to succeed.
+
+`autoLimit` and `maxRetries` can't be used simultaneously. Both are off by
+default.
+
 ## Available resources and methods
 
 - accessScope
@@ -374,6 +422,8 @@ This feature is only available on version 2.24.0 and above.
   - `get(id[, params])`
   - `list([params])`
   - `update(id, params)`
+- deprecatedApiCall
+  - `list()`
 - discountCode
   - `create(priceRuleId, params)`
   - `delete(priceRuleId, id)`
@@ -388,6 +438,12 @@ This feature is only available on version 2.24.0 and above.
 - dispute
   - `get(id)`
   - `list([params])`
+- disputeEvidence
+  - `get(disputeId)`
+  - `update(disputeId, params)`
+- disputeFileUpload
+  - `create(disputeId, params)`
+  - `delete(disputeId, id)`
 - draftOrder
   - `complete(id[, params])`
   - `count()`
@@ -403,6 +459,7 @@ This feature is only available on version 2.24.0 and above.
   - `list([params])`
 - fulfillment
   - `cancel(orderId, id)`
+  - `cancelV2(id)`
   - `complete(orderId, id)`
   - `count(orderId[, params)`
   - `create(orderId, params)`
@@ -411,6 +468,7 @@ This feature is only available on version 2.24.0 and above.
   - `list(orderId[, params])`
   - `open(orderId, id)`
   - `update(orderId, id, params)`
+  - `updateTracking(id, params)`
 - fulfillmentEvent
   - `create(orderId, fulfillmentId, params)`
   - `delete(orderId, fulfillmentId, id)`
@@ -424,6 +482,8 @@ This feature is only available on version 2.24.0 and above.
   - `list([params])`
   - `locationsForMove(id)`
   - `move(id, locationId)`
+  - `setFulfillmentOrdersDeadline(params)`
+  - `fulfillments(id)`
 - fulfillmentRequest
   - `accept(fulfillmentOrderId[, message])`
   - `create(fulfillmentOrderId, params)`
@@ -442,7 +502,7 @@ This feature is only available on version 2.24.0 and above.
   - `list([params])`
   - `search(params)`
   - `update(id, params)`
-- [giftCardAdjustment](https://help.shopify.com/en/api/reference/plus/gift_card_adjustment)
+- [giftCardAdjustment](https://shopify.dev/api/admin-rest/2022-04/resources/gift-card-adjustment)
   - `create(giftCardId, params)`
   - `get(giftCardId, id)`
   - `list(giftCardId)`
@@ -537,7 +597,7 @@ This feature is only available on version 2.24.0 and above.
   - `get(productId)`
   - `list([params])`
   - `productIds([params])`
-- [productResourceFeedback](https://help.shopify.com/en/api/reference/sales-channels/productresourcefeedback)
+- [productResourceFeedback](https://shopify.dev/api/admin-rest/2022-04/resources/product-resourcefeedback)
   - `create(productId[, params])`
   - `list(productId)`
 - productVariant
@@ -633,8 +693,8 @@ This feature is only available on version 2.24.0 and above.
   - `list([params])`
   - `update(id, params)`
 
-where `params` is a plain JavaScript object. See
-https://help.shopify.com/api/reference?ref=microapps for parameters details.
+where `params` is a plain JavaScript object. See the [Rest Admin API
+reference][reading-api-docs] for parameters details.
 
 ## GraphQL
 
@@ -664,10 +724,31 @@ shopify
   .catch((err) => console.error(err));
 ```
 
+## Hooks
+
+`shopify-api-node` supports being passed hooks which are called by `got` (the
+underlying HTTP library) during the request lifecycle.
+
+For example, we can log every error that is encountered when using the
+`maxRetries` option:
+
+```js
+const shopify = new Shopify({
+  shopName: 'your-shop-name',
+  accessToken: 'your-oauth-token',
+  maxRetries: 3,
+  // Pass the `beforeRetry` hook down to Got.
+  hooks: {
+    beforeRetry: [(options, error, retryCount) => console.error(error)]
+  }
+});
+```
+
+For more information on the available `got` hooks, see the
+[`got` v11 hooks documentation](https://github.com/sindresorhus/got/tree/v11#hooks).
+
 ## Become a master of the Shopify ecosystem by:
 
-- [Becoming a Shopify App Developer][becoming-a-shopify-app-developer]
-- [Checking out the roots][checking-out-the-roots]
 - [Talking To Other Masters][talking-to-other-masters]
 - [Reading API Docs][reading-api-docs]
 - [Learning from others][learning-from-others]
@@ -687,6 +768,7 @@ shopify
 - [Youtube Traffic][youtube-traffic]
 - [Shipatron][shipatron]
 - [UPC Code Manager][upc-code-manager]
+- [Shopify Passwordless Login][dimension-software]
 
 ## Supported by:
 
@@ -702,31 +784,23 @@ Used in our live products: [MoonMail][moonmail] & [MONEI][monei]
   https://github.com/Shopify/shopify-node-app
 [npm-shopify-api-node-badge]: https://img.shields.io/npm/v/shopify-api-node.svg
 [npm-shopify-api-node]: https://www.npmjs.com/package/shopify-api-node
-[travis-shopify-api-node-badge]:
-  https://img.shields.io/travis/MONEI/Shopify-api-node/master.svg
-[travis-shopify-api-node]: https://travis-ci.org/MONEI/Shopify-api-node
-[david-shopify-api-node-badge]:
-  https://img.shields.io/david/MONEI/Shopify-api-node.svg
-[david-shopify-api-node]: https://david-dm.org/MONEI/Shopify-api-node
+[ci-shopify-api-node-badge]:
+  https://img.shields.io/github/actions/workflow/status/MONEI/Shopify-api-node/ci.yml?branch=master&label=CI
+[ci-shopify-api-node]:
+  https://github.com/MONEI/Shopify-api-node/actions?query=workflow%3ACI+branch%3Amaster
 [coverage-shopify-api-node-badge]:
   https://img.shields.io/coveralls/MONEI/Shopify-api-node/master.svg
 [coverage-shopify-api-node]: https://coveralls.io/github/MONEI/Shopify-api-node
 [generate-private-app-credentials]:
-  https://help.shopify.com/api/guides/api-credentials#generate-private-app-credentials?ref=microapps
-[oauth]: https://help.shopify.com/api/guides/authentication/oauth?ref=microapps
+  https://shopify.dev/apps/auth/basic-http#step-2-generate-api-credentials
+[oauth]: https://shopify.dev/apps/auth/oauth
 [shopify-token]: https://github.com/lpinca/shopify-token
-[api-call-limit]:
-  https://help.shopify.com/api/guides/api-call-limit/?ref=microapps
-[api-versioning]: https://help.shopify.com/en/api/versioning
-[becoming-a-shopify-app-developer]:
-  https://app.shopify.com/services/partners/signup?ref=microapps
-[checking-out-the-roots]: https://help.shopify.com/api/guides?ref=microapps
-[talking-to-other-masters]:
-  https://ecommerce.shopify.com/c/shopify-apps?ref=microapps
-[reading-api-docs]: https://help.shopify.com/api/reference/?ref=microapps
+[api-call-limit]: https://shopify.dev/api/usage/rate-limits
+[api-versioning]: https://shopify.dev/api/usage/versioning
+[talking-to-other-masters]: https://community.shopify.com/
+[reading-api-docs]: https://shopify.dev/api/admin-rest
 [learning-from-others]: https://stackoverflow.com/questions/tagged/shopify
-[paginated-rest-results]:
-  https://help.shopify.com/en/api/guides/paginated-rest-results
+[paginated-rest-results]: https://shopify.dev/api/usage/pagination-rest
 [polaris]: https://polaris.shopify.com/?ref=microapps
 [microapps]:
   http://microapps.com/?utm_source=shopify-api-node-module-repo-readme&utm_medium=click&utm_campaign=github
@@ -741,3 +815,4 @@ Used in our live products: [MoonMail][moonmail] & [MONEI][monei]
 [youtube-traffic]: https://apps.shopify.com/youtube-traffic?ref=microapps
 [shipatron]: https://shipatron.io
 [upc-code-manager]: https://apps.shopify.com/upc-code-manager-1
+[dimension-software]: https://login.dimensionsoftware.com

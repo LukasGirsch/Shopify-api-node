@@ -13,7 +13,7 @@ describe('Shopify#fulfillment', () => {
   const shopify = common.shopify;
   const shopName = common.shopName;
 
-  afterEach(() => expect(scope.isDone()).to.be.true);
+  afterEach(() => expect(scope.pendingMocks()).to.deep.equal([]));
 
   it('gets a list of all fulfillments for an order (1/2)', () => {
     const output = fixtures.res.list;
@@ -142,7 +142,7 @@ describe('Shopify#fulfillment', () => {
       .then((data) => expect(data).to.deep.equal(output.fulfillment));
   });
 
-  it('cancels a pending fulfillment', () => {
+  it('cancels a fulfillment for a specific order ID', () => {
     const output = fixtures.res.cancel;
 
     scope
@@ -151,6 +151,18 @@ describe('Shopify#fulfillment', () => {
 
     return shopify.fulfillment
       .cancel(450789469, 255858046)
+      .then((data) => expect(data).to.deep.equal(output.fulfillment));
+  });
+
+  it('cancels a fulfillment', () => {
+    const output = fixtures.res.cancel;
+
+    scope
+      .post('/admin/fulfillments/255858046/cancel.json', {})
+      .reply(200, output);
+
+    return shopify.fulfillment
+      .cancelV2(255858046)
       .then((data) => expect(data).to.deep.equal(output.fulfillment));
   });
 
@@ -164,5 +176,18 @@ describe('Shopify#fulfillment', () => {
     return shopify.fulfillment
       .count(450789469)
       .then((data) => expect(data).to.equal(1));
+  });
+
+  it('updates the tracking information for a fulfillment', () => {
+    const input = fixtures.req.updateTracking;
+    const output = fixtures.res.updateTracking;
+
+    scope
+      .post('/admin/fulfillments/1022782904/update_tracking.json', input)
+      .reply(200, output);
+
+    return shopify.fulfillment
+      .updateTracking(1022782904, input.fulfillment)
+      .then((data) => expect(data).to.deep.equal(output.fulfillment));
   });
 });

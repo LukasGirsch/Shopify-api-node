@@ -22,9 +22,12 @@ const map = {
   customer: 'customer',
   customerAddress: 'customer-address',
   customerSavedSearch: 'customer-saved-search',
+  deprecatedApiCall: 'deprecated-api-call',
   discountCode: 'discount-code',
   discountCodeCreationJob: 'discount-code-creation-job',
   dispute: 'dispute',
+  disputeEvidence: 'dispute-evidence',
+  disputeFileUpload: 'dispute-file-upload',
   draftOrder: 'draft-order',
   event: 'event',
   fulfillment: 'fulfillment',
@@ -88,7 +91,7 @@ function registerAll(Shopify) {
         })[prop];
       },
       set: function set(value) {
-        Object.defineProperty(this, prop, { value })[prop];
+        Object.defineProperty(this, prop, { value });
       }
     });
   });

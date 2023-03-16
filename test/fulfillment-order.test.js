@@ -9,7 +9,7 @@ describe('Shopify#fulfillmentOrder', () => {
   const shopify = common.shopify;
   const scope = common.scope;
 
-  afterEach(() => expect(scope.isDone()).to.be.true);
+  afterEach(() => expect(scope.pendingMocks()).to.deep.equal([]));
 
   it('gets a list of fulfillment orders on a shop for a specific app', () => {
     const output = fixtures.res.list;
@@ -17,13 +17,13 @@ describe('Shopify#fulfillmentOrder', () => {
     scope
       .get(
         '/admin/assigned_fulfillment_orders.json' +
-          '?assignment_status=cancellation&location_ids[]=48752903'
+          '?assignment_status=cancellation_requested&location_ids[]=48752903'
       )
       .reply(200, output);
 
     return shopify.fulfillmentOrder
       .list({
-        assignment_status: 'cancellation',
+        assignment_status: 'cancellation_requested',
         location_ids: ['48752903']
       })
       .then((data) => expect(data).to.deep.equal(output.fulfillment_orders));
@@ -104,5 +104,34 @@ describe('Shopify#fulfillmentOrder', () => {
     return shopify.fulfillmentOrder.move(1025578643, 905684977).then((data) => {
       expect(data).to.deep.equal(output.original_fulfillment_order);
     });
+  });
+
+  it('reschedules the fulfill_at time of a scheduled fulfillment order', () => {
+    const input = fixtures.req.setFulfillmentOrdersDeadline;
+
+    scope
+      .post(
+        '/admin/fulfillment_orders/set_fulfillment_orders_deadline.json',
+        input
+      )
+      .reply(200, {});
+
+    return shopify.fulfillmentOrder
+      .setFulfillmentOrdersDeadline(input)
+      .then((data) => {
+        expect(data).to.deep.equal({});
+      });
+  });
+
+  it('retrieves fulfillments associated with a fulfillment order', () => {
+    const output = fixtures.res.fulfillments;
+
+    scope
+      .get('/admin/fulfillment_orders/1046000823/fulfillments.json')
+      .reply(200, output);
+
+    return shopify.fulfillmentOrder
+      .fulfillments(1046000823)
+      .then((data) => expect(data).to.deep.equal(output.fulfillments));
   });
 });

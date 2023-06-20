@@ -1054,6 +1054,7 @@ declare namespace Shopify {
 
   interface IAsset {
     attachment?: string;
+    checksum: string;
     content_type: string;
     created_at: string;
     key: string;
@@ -1860,7 +1861,9 @@ declare namespace Shopify {
     | 'closed'
     | 'in_progress'
     | 'incomplete'
-    | 'open';
+    | 'open'
+    | 'on_hold'
+    | 'scheduled';
 
   type FulfillmentOrderSupportedAction =
     | 'cancel_fulfillment_order'
@@ -2362,6 +2365,7 @@ declare namespace Shopify {
     cancelled_at: string | null;
     cart_token: string;
     client_details: IOrderClientDetails;
+    checkout_token: string | null;
     closed_at: string | null;
     confirmed: boolean;
     created_at: string;

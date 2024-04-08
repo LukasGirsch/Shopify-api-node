@@ -149,12 +149,13 @@ Shopify.prototype.updateLimits = function updateLimits(header) {
  */
 Shopify.prototype.request = function request(uri, method, key, data, headers) {
   const options = {
+    agent: this.options.agent,
     headers: { ...headers, ...this.baseHeaders },
-    stringifyJson: this.options.stringifyJson,
+    method,
     parseJson: this.options.parseJson,
-    timeout: this.options.timeout,
     responseType: 'json',
-    method
+    stringifyJson: this.options.stringifyJson,
+    timeout: this.options.timeout
   };
 
   const afterResponse = (res) => {
@@ -274,15 +275,16 @@ Shopify.prototype.graphql = function graphql(data, variables) {
   const uri = { pathname, ...this.baseUrl };
   const json = variables !== undefined && variables !== null;
   const options = {
+    agent: this.options.agent,
+    body: json ? this.options.stringifyJson({ query: data, variables }) : data,
     headers: {
       ...this.baseHeaders,
       'Content-Type': json ? 'application/json' : 'application/graphql'
     },
-    parseJson: this.options.parseJson,
-    timeout: this.options.timeout,
-    responseType: 'json',
     method: 'POST',
-    body: json ? this.options.stringifyJson({ query: data, variables }) : data
+    parseJson: this.options.parseJson,
+    responseType: 'json',
+    timeout: this.options.timeout
   };
 
   const afterResponse = (res) => {

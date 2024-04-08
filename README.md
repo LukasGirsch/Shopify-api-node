@@ -41,6 +41,10 @@ Creates a new `Shopify` instance.
   [OAuth 2.0][oauth] access token. This option is mutually exclusive with the
   `apiKey` and `password` options. If you are looking for a premade solution to
   obtain an access token, take a look at the [shopify-token][] module.
+- `agent` - Optional - An object that is passed as the `agent` option to `got`.
+  This allows to use a proxy server. See
+  [Got documentation](https://github.com/sindresorhus/got/tree/v11.8.6?tab=readme-ov-file#proxies)
+  for more details.
 - `apiVersion` - Optional - A string to specify the [Shopify API
   version][api-versioning] to use for requests. Defaults to the oldest supported
   stable version.
@@ -53,6 +57,18 @@ Creates a new `Shopify` instance.
   specifies a limit of 2 requests per second with a burst of 35 requests. When
   set to `true` requests are limited as specified in the above example. Defaults
   to `false`. Mutually exclusive with the `maxRetries` option.
+- `hooks` - Optional - A list of `got`
+  [request hooks](https://github.com/sindresorhus/got/tree/v11.8.6#hooks) to
+  attach to all outgoing requests, like `beforeRetry`, `afterResponse`, etc.
+  Hooks should be provided in the same format that Got expects them and will
+  receive the same arguments Got passes unchanged.
+- `maxRetries` - Optional - The number of times to attempt to make the request
+  to Shopify before giving up. Defaults to `0`, which means no automatic
+  retries. If set to a value greater than `0`, `shopify-api-node` will make up
+  to that many retries. `shopify-api-node` will respect the `Retry-After` header
+  for requests to the REST API, and the throttled cost data for requests to the
+  GraphQL API, and retry the request after that time has elapsed. Mutually
+  exclusive with the `autoLimit` option.
 - `parseJson` - Optional - The function used to parse JSON. The function is
   passed a single argument. This option allows the use of a custom JSON parser
   that might be needed to properly handle long integer IDs. Defaults to
@@ -66,18 +82,6 @@ Creates a new `Shopify` instance.
 - `timeout` - Optional - The number of milliseconds before the request times
   out. If the request takes longer than `timeout`, it will be aborted. Defaults
   to `60000`, or 1 minute.
-- `maxRetries` - Optional - The number of times to attempt to make the request
-  to Shopify before giving up. Defaults to `0`, which means no automatic
-  retries. If set to a value greater than `0`, `shopify-api-node` will make up
-  to that many retries. `shopify-api-node` will respect the `Retry-After` header
-  for requests to the REST API, and the throttled cost data for requests to the
-  GraphQL API, and retry the request after that time has elapsed. Mutually
-  exclusive with the `autoLimit` option.
-- `hooks` - Optional - A list of `got`
-  [request hooks](https://github.com/sindresorhus/got/tree/v11#hooks) to attach
-  to all outgoing requests, like `beforeRetry`, `afterResponse`, etc. Hooks
-  should be provided in the same format that Got expects them and will receive
-  the same arguments Got passes unchanged.
 
 #### Return value
 
@@ -232,7 +236,7 @@ shopify.metafield
   .create({
     key: 'warehouse',
     value: 25,
-    value_type: 'integer',
+    type: 'integer',
     namespace: 'inventory',
     owner_resource: 'product',
     owner_id: 632910392
@@ -762,9 +766,6 @@ For more information on the available `got` hooks, see the
 (add yours!)
 
 - [Sample Node Express app by Shopify][sample-node-express-app-by-shopify]
-- [Wholesaler][wholesaler]
-- [Wholesaler & Customer Pricing][wholesaler-customer-pricing]
-- [Wholesaler PRO][wholesaler-pro]
 - [Youtube Traffic][youtube-traffic]
 - [Shipatron][shipatron]
 - [UPC Code Manager][upc-code-manager]
@@ -772,9 +773,7 @@ For more information on the available `got` hooks, see the
 
 ## Supported by:
 
-[microapps][microapps]
-
-Used in our live products: [MoonMail][moonmail] & [MONEI][monei]
+[MONEI][monei]
 
 ## License
 
@@ -802,16 +801,8 @@ Used in our live products: [MoonMail][moonmail] & [MONEI][monei]
 [learning-from-others]: https://stackoverflow.com/questions/tagged/shopify
 [paginated-rest-results]: https://shopify.dev/api/usage/pagination-rest
 [polaris]: https://polaris.shopify.com/?ref=microapps
-[microapps]:
-  http://microapps.com/?utm_source=shopify-api-node-module-repo-readme&utm_medium=click&utm_campaign=github
-[moonmail]:
-  https://moonmail.io/?utm_source=shopify-api-node-module-repo-readme&utm_medium=click&utm_campaign=github
 [monei]:
-  https://monei.net/?utm_source=shopify-api-node-module-repo-readme&utm_medium=click&utm_campaign=github
-[wholesaler]: https://apps.shopify.com/wholesaler?ref=microapps
-[wholesaler-customer-pricing]:
-  https://apps.shopify.com/wholesaler-pro-1?ref=microapps
-[wholesaler-pro]: https://apps.shopify.com/wholesaler-pro-2?ref=microapps
+  https://monei.com/?utm_source=shopify-api-node-module-repo-readme&utm_medium=click&utm_campaign=github
 [youtube-traffic]: https://apps.shopify.com/youtube-traffic?ref=microapps
 [shipatron]: https://shipatron.io
 [upc-code-manager]: https://apps.shopify.com/upc-code-manager-1

@@ -1,7 +1,7 @@
 // Type definitions for shopify-api-node
 // Project: shopify-api-node
 // Definitions by: Rich Buggy <rich@buggy.id.au>
-import { Hooks } from 'got';
+import { Hooks, Agents } from 'got';
 
 /*~ This is the module template file for class modules.
  *~ You should rename it to index.d.ts and place it in a folder with the same name as the module.
@@ -789,6 +789,7 @@ declare namespace Shopify {
     shopName: string;
     timeout?: number;
     hooks?: Hooks;
+    agent?: Agents;
   }
 
   export interface IPrivateShopifyConfig {
@@ -801,6 +802,7 @@ declare namespace Shopify {
     shopName: string;
     timeout?: number;
     hooks?: Hooks;
+    agent?: Agents;
   }
 
   export interface ICallLimits {
@@ -1385,8 +1387,15 @@ declare namespace Shopify {
 
   type CustomerState = 'declined' | 'disabled' | 'enabled' | 'invited';
 
+  interface IEmailMarketingConsent {
+    state: string;
+    opt_in_level: string | null;
+    consent_updated_at: string;
+  }
+
   interface ICustomer {
-    accepts_marketing: boolean;
+    accepts_marketing?: boolean;
+    email_marketing_consent?: IEmailMarketingConsent;
     addresses?: ICustomerAddress[];
     created_at: string;
     currency: string;
@@ -2184,7 +2193,8 @@ declare namespace Shopify {
   }
 
   interface IOrderCustomer {
-    accepts_marketing: boolean;
+    accepts_marketing?: boolean;
+    email_marketing_consent?: IEmailMarketingConsent;
     created_at: string;
     default_address: ICustomerAddress;
     email: string;
@@ -2368,6 +2378,7 @@ declare namespace Shopify {
     checkout_token: string | null;
     closed_at: string | null;
     confirmed: boolean;
+    contact_email: string | null;
     created_at: string;
     currency: string;
     current_subtotal_price: string;
@@ -2428,6 +2439,7 @@ declare namespace Shopify {
     total_discounts_set: IMoneySet;
     total_line_items_price: string;
     total_line_items_price_set: IMoneySet;
+    total_outstanding: string;
     total_price: string;
     total_price_set: IMoneySet;
     total_shipping_price_set: IMoneySet;
@@ -3171,6 +3183,7 @@ declare namespace Shopify {
 
   export type WebhookTopic =
     | 'app/uninstalled'
+    | 'app_subscriptions/update'
     | 'bulk_operations/finish'
     | 'carts/create'
     | 'carts/update'
@@ -3183,20 +3196,61 @@ declare namespace Shopify {
     | 'collections/create'
     | 'collections/delete'
     | 'collections/update'
+    | 'companies/create'
+    | 'companies/delete'
+    | 'companies/update'
+    | 'company_contact_roles/assign'
+    | 'company_contact_roles/revoke'
+    | 'company_contacts/create'
+    | 'company_contacts/delete'
+    | 'company_contacts/update'
+    | 'company_locations/create'
+    | 'company_locations/delete'
+    | 'company_locations/update'
+    | 'customer.tags_added'
+    | 'customer.tags_removed'
     | 'customer_groups/create'
     | 'customer_groups/delete'
     | 'customer_groups/update'
+    | 'customer_payment_methods/create'
+    | 'customer_payment_methods/revoke'
+    | 'customer_payment_methods/update'
     | 'customers/create'
     | 'customers/delete'
     | 'customers/disable'
     | 'customers/enable'
+    | 'customers/merge'
     | 'customers/update'
+    | 'customers_email_marketing_consent/update'
     | 'customers_marketing_consent/update'
+    | 'disputes/create'
+    | 'disputes/update'
+    | 'domains/create'
+    | 'domains/destroy'
+    | 'domains/update'
     | 'draft_orders/create'
     | 'draft_orders/delete'
     | 'draft_orders/update'
     | 'fulfillment_events/create'
     | 'fulfillment_events/delete'
+    | 'fulfillment_orders/cancellation_request_accepted'
+    | 'fulfillment_orders/cancellation_request_rejected'
+    | 'fulfillment_orders/cancellation_request_submitted'
+    | 'fulfillment_orders/cancelled'
+    | 'fulfillment_orders/fulfillment_request_accepted'
+    | 'fulfillment_orders/fulfillment_request_rejected'
+    | 'fulfillment_orders/fulfillment_request_submitted'
+    | 'fulfillment_orders/fulfillment_service_failed_to_complete'
+    | 'fulfillment_orders/hold_released'
+    | 'fulfillment_orders/line_items_prepared_for_local_delivery'
+    | 'fulfillment_orders/line_items_prepared_for_pickup'
+    | 'fulfillment_orders/merged'
+    | 'fulfillment_orders/moved'
+    | 'fulfillment_orders/order_routing_complete'
+    | 'fulfillment_orders/placed_on_hold'
+    | 'fulfillment_orders/rescheduled'
+    | 'fulfillment_orders/scheduled_fulfillment_order_ready'
+    | 'fulfillment_orders/split'
     | 'fulfillments/create'
     | 'fulfillments/update'
     | 'inventory_items/create'
@@ -3205,9 +3259,17 @@ declare namespace Shopify {
     | 'inventory_levels/connect'
     | 'inventory_levels/disconnect'
     | 'inventory_levels/update'
+    | 'locales/create'
+    | 'locales/destroy'
+    | 'locales/update'
+    | 'locations/activate'
     | 'locations/create'
+    | 'locations/deactivate'
     | 'locations/delete'
     | 'locations/update'
+    | 'markets/create'
+    | 'markets/delete'
+    | 'markets/update'
     | 'order_transactions/create'
     | 'orders/cancelled'
     | 'orders/create'
@@ -3217,16 +3279,25 @@ declare namespace Shopify {
     | 'orders/paid'
     | 'orders/partially_fulfilled'
     | 'orders/updated'
+    | 'payment_schedules/due'
     | 'payment_terms/create'
     | 'payment_terms/delete'
     | 'payment_terms/update'
+    | 'product_feeds/full_sync'
+    | 'product_feeds/incremental_sync'
     | 'product_listings/add'
     | 'product_listings/remove'
     | 'product_listings/update'
     | 'products/create'
     | 'products/delete'
     | 'products/update'
+    | 'profiles/create'
+    | 'profiles/delete'
+    | 'profiles/update'
     | 'refunds/create'
+    | 'scheduled_product_listings/add'
+    | 'scheduled_product_listings/remove'
+    | 'scheduled_product_listings/update'
     | 'selling_plan_groups/create'
     | 'selling_plan_groups/delete'
     | 'selling_plan_groups/update'
@@ -3234,6 +3305,9 @@ declare namespace Shopify {
     | 'subscription_billing_attempts/challenged'
     | 'subscription_billing_attempts/failure'
     | 'subscription_billing_attempts/success'
+    | 'subscription_billing_cycle_edits/create'
+    | 'subscription_billing_cycle_edits/delete'
+    | 'subscription_billing_cycle_edits/update'
     | 'subscription_contracts/create'
     | 'subscription_contracts/update'
     | 'tender_transactions/create'
@@ -3274,6 +3348,7 @@ declare namespace Shopify {
     topic: WebhookTopic;
   }
 
+  // prettier-ignore
   export type WebhookType<T extends WebhookTopic> = T extends 'app/uninstalled'
     ? IShop
     : T extends 'carts/create'

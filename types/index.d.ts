@@ -371,24 +371,30 @@ declare class Shopify {
     ) => Promise<Shopify.IFulfillmentEvent>;
   };
   fulfillmentOrder: {
-    cancel: (
-      id: number,
-      params: Shopify.IFulfillmentOrder
-    ) => Promise<Shopify.IFulfillmentOrder>;
+    cancel: (id: number) => Promise<Shopify.IFulfillmentOrder>;
     close: (id: number, message?: string) => Promise<Shopify.IFulfillmentOrder>;
+    fulfillments: (
+      id: number
+    ) => Promise<Shopify.IPaginatedResult<Shopify.IFulfillment>>;
     get: (id: number) => Promise<Shopify.IFulfillmentOrder>;
+    hold: (
+      id: number,
+      params: Shopify.IFulfillmentHold
+    ) => Promise<Shopify.IFulfillmentOrder>;
     list: (params?: any) => Promise<Shopify.IFulfillmentOrder[]>;
     locationsForMove: (id: number) => Promise<Shopify.ILocationForMove[]>;
     move: (
       id: number,
       locationId: number
     ) => Promise<Shopify.IFulfillmentOrder>;
+    releaseHold: (id: number) => Promise<Shopify.IFulfillmentOrder>;
+    reschedule: (
+      id: number,
+      deadline: string
+    ) => Promise<Shopify.IFulfillmentOrder>;
     setFulfillmentOrdersDeadline: (
       params: Shopify.ISetFulfillmentOrdersDeadline
     ) => Promise<void>;
-    fulfillments: (
-      id: number
-    ) => Promise<Shopify.IPaginatedResult<Shopify.IFulfillment>>;
   };
   fulfillmentRequest: {
     accept: (
@@ -996,32 +1002,32 @@ declare namespace Shopify {
   }
 
   interface ICreateArticle {
-    author: string;
-    body_html: string;
+    author?: string;
+    body_html?: string;
     handle?: string;
-    image?: IBase64Image;
+    image?: ICreateArticleImage;
     metafields?: ICreateObjectMetafield[];
     published?: boolean;
     published_at?: string;
     summary_html?: string | null;
     tags?: string;
     template_suffix?: string | null;
-    title: string;
+    title?: string;
     user_id?: number;
   }
 
   interface IUpdateArticle {
-    author: string;
-    body_html: string;
+    author?: string;
+    body_html?: string;
     handle?: string;
-    image?: IBase64Image;
+    image?: ICreateArticleImage;
     metafields?: ICreateObjectMetafield[];
     published?: boolean;
     published_at?: string;
     summary_html?: string | null;
     tags?: string;
     template_suffix?: string | null;
-    title: string;
+    title?: string;
     user_id?: number;
   }
 
@@ -1034,8 +1040,10 @@ declare namespace Shopify {
     alt: string | null;
   }
 
-  interface IBase64Image {
-    attachment: string;
+  interface ICreateArticleImage {
+    attachment?: string;
+    src?: string;
+    alt?: string;
   }
 
   interface IObjectMetafield {
@@ -1406,7 +1414,7 @@ declare namespace Shopify {
     last_name: string;
     metafield?: IObjectMetafield; // From https://help.shopify.com/api/reference/customer but not visible in test API call
     phone: string;
-    multipass_identifier: null;
+    multipass_identifier: string | null;
     last_order_id: number | null;
     last_order_name: string | null;
     note: string | null;
@@ -1484,6 +1492,12 @@ declare namespace Shopify {
     type: DiscountApplicationType;
     value: string;
     value_type: ValueType;
+  }
+
+  interface IDiscountAllocation {
+    amount: string;
+    amount_set: IMoneySet;
+    discount_application_index: number;
   }
 
   interface IDiscountCode {
@@ -1777,6 +1791,7 @@ declare namespace Shopify {
     total_discount: string;
     fulfillment_status: IFulfillmentStatus;
     tax_lines: IFulfillmentLineItemTaxLine[];
+    discount_allocations: IDiscountAllocation[];
   }
 
   interface IFulfillment {
@@ -2309,6 +2324,7 @@ declare namespace Shopify {
   }
 
   interface IOrderLineItem {
+    current_quantity?: number;
     discount_allocations: ILineItemDiscountAllocation[];
     fulfillable_quantity: number;
     fulfillment_service: string;
@@ -2377,6 +2393,7 @@ declare namespace Shopify {
     client_details: IOrderClientDetails;
     checkout_token: string | null;
     closed_at: string | null;
+    confirmation_number: string;
     confirmed: boolean;
     contact_email: string | null;
     created_at: string;
@@ -3223,6 +3240,11 @@ declare namespace Shopify {
     | 'customers/update'
     | 'customers_email_marketing_consent/update'
     | 'customers_marketing_consent/update'
+    | 'discounts/create'
+    | 'discounts/delete'
+    | 'discounts/redeemcode_added'
+    | 'discounts/redeemcode_removed'
+    | 'discounts/update'
     | 'disputes/create'
     | 'disputes/update'
     | 'domains/create'
@@ -3389,6 +3411,16 @@ declare namespace Shopify {
     ? ICustomerSavedSearch
     : T extends 'customer_groups/delete'
     ? IDeletedItem
+    : T extends 'discounts/create'
+    ? IDiscountUpsertWebhook
+    : T extends 'discounts/delete'
+    ? IDiscountDeleteWebhook
+    : T extends 'discounts/redeemcode_added'
+    ? IDiscountRedeemCodeWebhook
+    : T extends 'discounts/redeemcode_removed'
+    ? IDiscountRedeemCodeWebhook
+    : T extends 'discounts/update'
+    ? IDiscountUpsertWebhook
     : T extends 'draft_orders/create'
     ? IDraftOrder
     : T extends 'draft_orders/update'
@@ -3517,5 +3549,46 @@ declare namespace Shopify {
     phone_required?: boolean;
     min_delivery_date?: string;
     max_delivery_date?: string;
+  }
+
+  type DiscountStatus = 'ACTIVE' | 'EXPIRED' | 'SCHEDULED';
+
+  interface IDiscountUpsertWebhook {
+    admin_graphql_api_id: string;
+    title: string;
+    status: DiscountStatus;
+    created_at: string;
+    updated_at: string;
+  }
+
+  interface IDiscountDeleteWebhook {
+    admin_graphql_api_id: string;
+    deleted_at: string;
+  }
+
+  interface IDiscountRedeemCodeWebhook {
+    admin_graphql_api_id: string;
+    redeem_code: {
+      id: string;
+      code: string;
+    };
+    updated_at: string;
+  }
+
+  interface IFulfillmentHoldFulfillmentOrderLineItem {
+    id: number;
+    quantity: number;
+  }
+
+  interface IFulfillmentHold {
+    reason:
+      | 'awaiting_payment'
+      | 'high_risk_of_fraud'
+      | 'incorrect_address'
+      | 'inventory_out_of_stock'
+      | 'other';
+    reason_notes?: string;
+    notify_merchant?: boolean;
+    fulfillment_order_line_items?: IFulfillmentHoldFulfillmentOrderLineItem[];
   }
 }

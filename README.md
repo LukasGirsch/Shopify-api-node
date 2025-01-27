@@ -480,14 +480,17 @@ default.
   - `list(orderId, fulfillmentId[, params])`
   - `update(orderId, fulfillmentId, id, params)`
 - fulfillmentOrder
-  - `cancel(id, params)`
+  - `cancel(id)`
   - `close(id[, message])`
+  - `fulfillments(id)`
   - `get(id)`
+  - `hold(id, params)`
   - `list([params])`
   - `locationsForMove(id)`
   - `move(id, locationId)`
+  - `releaseHold(id)`
+  - `reschedule(id, deadline)`
   - `setFulfillmentOrdersDeadline(params)`
-  - `fulfillments(id)`
 - fulfillmentRequest
   - `accept(fulfillmentOrderId[, message])`
   - `create(fulfillmentOrderId, params)`

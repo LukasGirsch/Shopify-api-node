@@ -40,15 +40,14 @@ describe('Shopify#fulfillmentOrder', () => {
   });
 
   it('cancels a fulfillment order', () => {
-    const input = fixtures.req.cancel;
     const output = fixtures.res.cancel;
 
     scope
-      .post('/admin/fulfillment_orders/1025578640/cancel.json', input)
+      .post('/admin/fulfillment_orders/1046000791/cancel.json', {})
       .reply(200, output);
 
     return shopify.fulfillmentOrder
-      .cancel(1025578640, input.fulfillment_order)
+      .cancel(1046000791)
       .then((data) => expect(data).to.deep.equal(output.fulfillment_order));
   });
 
@@ -133,5 +132,47 @@ describe('Shopify#fulfillmentOrder', () => {
     return shopify.fulfillmentOrder
       .fulfillments(1046000823)
       .then((data) => expect(data).to.deep.equal(output.fulfillments));
+  });
+
+  it('applies a fulfillment hold on an open fulfillment order', () => {
+    const input = fixtures.req.hold;
+    const output = fixtures.res.hold;
+
+    scope
+      .post('/admin/fulfillment_orders/1046000789/hold.json', input)
+      .reply(200, output);
+
+    return shopify.fulfillmentOrder
+      .hold(1046000789, input.fulfillment_hold)
+      .then((data) => {
+        expect(data).to.deep.equal(output.fulfillment_order);
+      });
+  });
+
+  it('releases the fulfillment hold on a fulfillment order', () => {
+    const output = fixtures.res.releaseHold;
+
+    scope
+      .post('/admin/fulfillment_orders/1046000790/release_hold.json', {})
+      .reply(200, output);
+
+    return shopify.fulfillmentOrder.releaseHold(1046000790).then((data) => {
+      expect(data).to.deep.equal(output.fulfillment_order);
+    });
+  });
+
+  it('reschedules the fulfill_at time of a scheduled fulfillment order', () => {
+    const input = fixtures.req.reschedule;
+    const output = fixtures.res.reschedule;
+
+    scope
+      .post('/admin/fulfillment_orders/1046000788/reschedule.json', input)
+      .reply(200, output);
+
+    return shopify.fulfillmentOrder
+      .reschedule(1046000788, '2025-08-24 10:26 UTC')
+      .then((data) => {
+        expect(data).to.deep.equal(output.fulfillment_order);
+      });
   });
 });
